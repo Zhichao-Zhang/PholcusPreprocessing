@@ -5,6 +5,7 @@ import (
 	"github.com/gogf/gf/os/glog"
 	"github.com/gogf/gf/util/gconv"
 	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
+	"strings"
 )
 
 // 获取有效接口集合 validIntSet，后面的allEdge和allNode需要筛选
@@ -34,6 +35,51 @@ func GetValidInt(session neo4j.Session)  (map[string]bool,  error) {
 	}
 
 	return validIntSet, err
+}
+
+func FixRepeat(input map[string]interface{})  map[string]interface{}{
+	nodeSet := make(map[string]bool)
+	edgeSet := make(map[string]bool)
+	resNode :=  []map[string]string{}
+	resEdge :=  []map[string]string{}
+
+	nodes := gconv.Interfaces(input["nodes"])
+	edges := gconv.Interfaces(input["edges"])
+
+	for _, n := range nodes{
+
+		if _,ok := nodeSet[n.(map[string]string)["id"]]; ok{
+			glog.Warning("repeated node id" , n.(map[string]string)["id"])
+			continue
+		}else {
+			resNode = append(resNode, n.(map[string]string))
+			nodeSet[n.(map[string]string)["id"]] = true
+		}
+
+	}
+
+	for _, e := range edges{
+
+		if _,ok := edgeSet[e.(map[string]string)["id"]]; ok{
+			glog.Warning("repeated edge id" , e.(map[string]string)["id"])
+			continue
+		}else {
+			resEdge = append(resEdge, e.(map[string]string))
+			edgeSet[e.(map[string]string)["id"]] = true
+		}
+
+	}
+	res := make(map[string]interface{})
+	res["nodes"] = nodes
+	res["edges"] = edges
+	glog.Info("arr vs set")
+	glog.Info(len(nodes), len(nodeSet), len(edges), len(edgeSet))
+	return res
+
+
+
+
+
 }
 
 
@@ -101,13 +147,12 @@ func GetViews() (map[string]interface{}, error) {
 	}
 
 
-
-	glog.Info("获取allNodes, allEdges 完成，计数为：")
+	glog.Info("获取allNodes, allEdges + set计数 完成，计数为：")
 	glog.Info(len(allNodes), len(nodesSet))
 	glog.Info(len(allEdges), len(edgesSet))
-	glog.Info(len(allIntSet))
 
 	// 如果需要过滤掉终端设备的话
+
 	validIntSet, err := GetValidInt(session)
 	if err != nil{
 		glog.Warning(err)
@@ -122,19 +167,19 @@ func GetViews() (map[string]interface{}, error) {
 		}
 	}
 
-	glog.Info(len(invalidIntSet))
+	//glog.Info(len(invalidIntSet))
 
 	// 混合视图
 	mixViewNodes := []map[string]string{}
 	mixViewEdges := []map[string]string{}
 
-	for _, node := range allNodes{
+/*	for _, node := range allNodes{
 		if node["category"] == "Interface"{
 			if _, ok := invalidIntSet[node["id"]]; ok{
 				// invalid node, 跳过
 				continue
 			}
-		}
+}
 
 		mixViewNodes = append(mixViewNodes, node)
 	}
@@ -151,14 +196,22 @@ func GetViews() (map[string]interface{}, error) {
 
 		mixViewEdges = append(mixViewEdges, edge)
 	}
-
+*/
+	mixViewNodes = allNodes
+	mixViewEdges = allEdges
 
 	glog.Info("mixView 处理完成， 计数为：")
 	glog.Info(len(mixViewNodes), len(mixViewEdges))
+
+
+	
 	mixView := make(map[string]interface{})
 	mixView["nodes"] = mixViewNodes
 	mixView["edges"] = mixViewEdges
-	glog.Info(mixView)
+//	glog.Info(mixView)
+
+	newMixView := FixRepeat(mixView)
+
 
 
 
@@ -184,7 +237,7 @@ func GetViews() (map[string]interface{}, error) {
 
 	for update{
 		update = false
-		glog.Info(len(seenNodes))
+		//glog.Info(len(seenNodes))
 		for _, edge := range mixViewEdges{
 			if _, ok:= seenNodes[edge["source"]]; ok {
 				if _, ok := seenNodes[edge["target"]]; !ok{
@@ -196,7 +249,7 @@ func GetViews() (map[string]interface{}, error) {
 			}
 		}
 	}
-	glog.Info(len(seenNodes))
+	//glog.Info(len(seenNodes))
 	logicNodeSet := make(map[string]bool)
 	logicEdgeSet := make(map[string]bool)
 
@@ -232,12 +285,23 @@ func GetViews() (map[string]interface{}, error) {
 	//glog.Info(logicView)
 
 
+	newLogicView := FixRepeat(logicView)
+
 	// 物理视图
 	NetworkSet := make(map[string]bool)
 	PhysViewNodes := []interface{}{}
 	PhysViewEdges := []interface{}{}
 
+
+
 	for _, node := range mixViewNodes{
+		if node["category"] == "Interface"{
+			if _,ok := invalidIntSet[node["id"]]; ok{
+				continue
+			}
+		}
+
+
 		if node["category"] == "Network"{
 			NetworkSet[node["id"]] = true
 			continue
@@ -246,6 +310,15 @@ func GetViews() (map[string]interface{}, error) {
 	}
 
 	for _, edge := range mixViewEdges{
+		
+		if _,ok := invalidIntSet[edge["source"]]; ok{
+			continue
+		}
+
+		if _,ok := invalidIntSet[edge["target"]]; ok{
+			continue
+		}
+
 		if _, ok := NetworkSet[edge["source"]]; ok{
 			continue
 		}
@@ -263,12 +336,13 @@ func GetViews() (map[string]interface{}, error) {
 	physView["nodes"] = PhysViewNodes
 	physView["edges"] = PhysViewEdges
 	//glog.Info(physView)
-
+	newPhysView := FixRepeat(physView)
 
 	res := make(map[string]interface{})
-	res["mixed"] = mixView
-	res["logical"] = logicView
-	res["physical"] = physView
+	res["mixed"] = newMixView
+	res["logical"] = newLogicView
+	res["physical"] = newPhysView
+	glog.Info(res["mixed"])
 	return res, nil
 
 }
@@ -343,6 +417,7 @@ func EdgeHandler(r interface{}, edgeSet map[string]bool) (edge map[string]string
 	jsonS := gjson.New(temp)
 	id := jsonS.GetString("Id")
 
+
 	// 去重检查 + 加入
 	if _, ok := edgeSet[id]; ok == true{
 		//glog.Info("发现重复结点", id)
@@ -359,7 +434,7 @@ func EdgeHandler(r interface{}, edgeSet map[string]bool) (edge map[string]string
 
 	// 初始化edge
 	edge = map[string]string{
-		"id" : id,
+		"id" : strings.Join([]string{"edge", id}, "_"),
 		"source" : source,
 		"target" : target,
 		"relationType" : relationType,
