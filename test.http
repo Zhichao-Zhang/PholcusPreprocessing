@@ -1,4 +1,6 @@
 
 ### Send POST request with json body
 GET http://localhost:8199/v1/views
+### Send POST request with json body
+GET http://localhost:8199/v1/nodeAttrMap
 
